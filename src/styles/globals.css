@@ -1,0 +1,130 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Biophilic background - Light cream/beige */
+    --background: 60 12% 97.5%;
+    /* Deep forest green */
+    --foreground: 140 55% 18%;
+
+    /* Soft cream card background */
+    --card: 60 10% 98%;
+    --card-foreground: 140 55% 18%;
+
+    --popover: 60 10% 98%;
+    --popover-foreground: 140 55% 18%;
+
+    /* Forest green - refined */
+    --primary: 142 45% 28%;
+    --primary-foreground: 60 8% 97%;
+    --primary-light: 142 35% 38%;
+
+    /* Moss green - softer */
+    --secondary: 125 28% 88%;
+    --secondary-foreground: 140 55% 12%;
+
+    /* Light moss green */
+    --muted: 125 22% 92%;
+    --muted-foreground: 140 28% 38%;
+
+    /* Earth brown accent - warmer */
+    --accent: 35 28% 82%;
+    --accent-foreground: 140 55% 12%;
+
+    /* Terracotta - refined */
+    --destructive: 8 55% 52%;
+    --destructive-foreground: 60 8% 97%;
+
+    /* Soft moss green - thinner border */
+    --border: 125 22% 88%;
+    --input: 125 22% 88%;
+    --ring: 142 45% 28%;
+
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    /* Deep slate/blue-black background, not pure black (Low Glare) */
+    --background: 220 20% 7%;
+    /* 85% brightness for comfortable readability, cascading contrast */
+    --foreground: 220 12% 82%;
+
+    /* Dark card background, slightly segregated from main background */
+    --card: 220 18% 9.5%;
+    --card-foreground: 220 12% 82%;
+
+    --popover: 220 18% 9.5%;
+    --popover-foreground: 220 12% 82%;
+
+    /* Restrained primary color (Subtle muted blue/indigo) */
+    --primary: 142 45% 32%;
+    --primary-foreground: 60 8% 97%;
+    --primary-light: 142 35% 42%;
+
+    /* Muted secondary container */
+    --secondary: 220 15% 13%;
+    --secondary-foreground: 220 12% 82%;
+
+    /* Secondary text / muted elements */
+    --muted: 220 15% 13%;
+    --muted-foreground: 220 10% 58%;
+
+    /* Ambient hover/active accent */
+    --accent: 220 15% 13%;
+    --accent-foreground: 220 12% 82%;
+
+    /* Avoid pure red piercing highlits - dim terracotta */
+    --destructive: 8 50% 42%;
+    --destructive-foreground: 0 0% 95%;
+
+    /* Thin strokes and dividers */
+    --border: 220 15% 16%;
+    --input: 220 15% 16%;
+    --ring: 142 45% 32%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv11" "ss01";
+    font-optical-sizing: auto;
+  }
+}
+
+@layer utilities {
+  /* Linear-style Animations */
+  .animate-in {
+    animation-duration: 150ms;
+    animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+    will-change: transform, opacity;
+  }
+
+  /* Smooth transitions for common properties */
+  .transition-smooth {
+    transition-property: transform, opacity, border-color, box-shadow, background-color;
+    transition-duration: 200ms;
+    transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  /* Subtle card hover lift */
+  .card-lift {
+    transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .card-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+  }
+
+  /* Glass morphism for overlays */
+  .glass {
+    background: hsl(var(--card) / 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+}
