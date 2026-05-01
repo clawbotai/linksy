@@ -4,6 +4,7 @@ import * as React from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { Logo } from "@/components/Logo";
 import {
   FileSearch,
   History,
@@ -80,17 +81,7 @@ export function DesktopSidebar({ open, onOpenSettings }: DesktopSidebarProps) {
   const sidebarContent = (
     <>
       <div className="px-6 pb-6 pt-6">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary-light shadow-lg shadow-primary/20">
-            <Mic className="h-4.5 w-4.5 text-primary-foreground" />
-          </div>
-          <div>
-            <h1 className="bg-gradient-to-r from-foreground to-muted-foreground bg-clip-text text-lg font-semibold text-transparent">
-              Linksy
-            </h1>
-            <p className="text-[10px] text-muted-foreground -mt-0.5">Turn any link into knowledge</p>
-          </div>
-        </div>
+        <Logo size="md" />
       </div>
 
       <div className="flex-1 px-3 py-2">

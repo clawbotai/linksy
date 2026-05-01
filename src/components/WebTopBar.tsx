@@ -1,5 +1,6 @@
 'use client';
 
+import { Logo } from "@/components/Logo";
 import { cn } from "@/lib/utils";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 
@@ -19,7 +20,7 @@ export function WebTopBar({ sidebarOpen, onToggleSidebar }: WebTopBarProps) {
           )}
         />
 
-        <div className="relative z-10 flex h-full items-center pl-4 transition-[padding] duration-300 ease-out">
+        <div className="relative z-10 flex h-full items-center gap-3 pl-4 transition-[padding] duration-300 ease-out">
           <button
             type="button"
             onClick={onToggleSidebar}
@@ -33,6 +34,11 @@ export function WebTopBar({ sidebarOpen, onToggleSidebar }: WebTopBarProps) {
               <PanelLeftOpen className="h-4 w-4" />
             )}
           </button>
+          {!sidebarOpen && (
+            <div className="hidden md:block">
+              <Logo size="sm" showText={false} />
+            </div>
+          )}
         </div>
       </div>
     </header>
