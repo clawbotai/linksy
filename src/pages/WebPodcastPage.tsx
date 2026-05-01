@@ -10,7 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToastManager } from "@/components/ui/toast";
-import { useTranscriptionConfig } from "@/hooks/use-transcription-config";
+import { useTranscriptionConfig, getActiveTranscriptionProvider } from "@/hooks/use-transcription-config";
+import { getTranscriptionProviderName } from "@/lib/transcription-providers";
 
 import { deleteTranscriptionRecord, listTranscriptionRecords, saveTranscriptionRecord } from "@/lib/db";
 import { COMPLETION_TOAST_DURATION_MS, buildCompletionMessage } from "@/lib/utils";
@@ -48,6 +49,7 @@ function formatTimestamp(ts: string): string {
 
 export function WebPodcastPage() {
   const { config } = useTranscriptionConfig();
+  const activeProvider = getActiveTranscriptionProvider();
   const { openSettings } = useOutletContext<WebShellContext>();
   const [toast, setToast] = useState<{
     message: string;
@@ -155,10 +157,10 @@ export function WebPodcastPage() {
 
       try {
         // Web 版只支持在线 ASR，检查 API Key
-        if (!config.onlineASR.apiKey.trim()) {
+        if (!activeProvider?.apiKey?.trim()) {
           openSettings("transcription");
           setToast({
-            message: "已为你打开「转录」设置；请先填写千问 ASR API Key，再重新点击转录。",
+            message: `已为你打开「转录」设置；请先填写${activeProvider ? getTranscriptionProviderName(activeProvider) : "ASR"} API Key，再重新点击转录。`,
             type: "error",
             duration: 6000,
           });
@@ -181,8 +183,10 @@ export function WebPodcastPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             url: normalizedPodcastUrl,
-            apiKey: config.onlineASR.apiKey,
-            baseUrl: config.onlineASR.baseUrl,
+            apiKey: activeProvider!.apiKey,
+            baseUrl: activeProvider!.baseUrl,
+            modelName: activeProvider!.modelName,
+            enableITN: activeProvider!.enableITN,
           }),
           signal: controller.signal,
         });
@@ -207,7 +211,7 @@ export function WebPodcastPage() {
         setTranscribeProgress(20);
 
         // 轮询 DashScope 任务状态
-        const baseUrl = (config.onlineASR.baseUrl || "https://dashscope.aliyuncs.com/api/v1").replace(/\/$/, "");
+        const pollBaseUrl = (activeProvider!.baseUrl || "https://dashscope.aliyuncs.com/api/v1").replace(/\/$/, "");
         let progress = 20;
 
         const pollResult = await new Promise<{ transcript: string; segments: Array<{ timestamp: string; text: string }>; wordCount: number; language: string }>((resolve, reject) => {
@@ -219,9 +223,9 @@ export function WebPodcastPage() {
                 return;
               }
 
-              const statusUrl = `/api/transcriptions/${encodeURIComponent(dashScopeTaskId)}/status?baseUrl=${encodeURIComponent(baseUrl)}`;
+              const statusUrl = `/api/transcriptions/${encodeURIComponent(dashScopeTaskId)}/status?baseUrl=${encodeURIComponent(pollBaseUrl)}`;
               const statusRes = await fetch(statusUrl, {
-                headers: { Authorization: `Bearer ${config.onlineASR.apiKey}` },
+                headers: { Authorization: `Bearer ${activeProvider!.apiKey}` },
                 signal: controller.signal,
               });
 
@@ -315,7 +319,7 @@ export function WebPodcastPage() {
         setTaskId(null);
       }
     },
-    [cancelActiveRequest, config.onlineASR, isLoading, openSettings, podcastUrl],
+    [cancelActiveRequest, activeProvider, config.activeEngine, isLoading, openSettings, podcastUrl],
   );
 
   const handleRecordDeleted = useCallback(
@@ -396,7 +400,7 @@ export function WebPodcastPage() {
                   </Button>
                 </div>
                 <p className="mt-2.5 text-xs text-muted-foreground leading-relaxed">
-                  通过服务端代理调用千问 ASR 在线转录，支持音频直链、Apple Podcasts 单集、小宇宙及 RSS 链接。
+                  通过服务端代理调用 ASR 在线转录，支持音频直链、Apple Podcasts 单集、小宇宙及 RSS 链接。
                 </p>
               </div>
             </form>

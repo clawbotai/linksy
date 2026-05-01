@@ -5,10 +5,9 @@ import { useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { ToastManager } from "@/components/ui/toast";
-import { useTranscriptionConfig } from "@/hooks/use-transcription-config";
 import { LanguageModelSettingsPanel } from "@/components/language-model-settings-panel";
+import { TranscriptionEnginePanel } from "@/components/app-settings/transcription-engine-panel";
 import { Database, Mic, Settings, Trash2 } from "lucide-react";
 import { PageScene } from "@/components/PageScene";
 import { clearTranscriptionRecords, listTranscriptionRecords } from "@/lib/db";
@@ -18,7 +17,6 @@ type SettingsTab = "general" | "transcription" | "language-models";
 export function WebSettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const section = (searchParams.get("section") || "general") as SettingsTab;
-  const { config, updateOnlineASRConfig } = useTranscriptionConfig();
   const [recordCount, setRecordCount] = useState(0);
   const [clearing, setClearing] = useState(false);
   const [toast, setToast] = useState<{
@@ -89,33 +87,7 @@ export function WebSettingsPage() {
           </TabsContent>
 
           <TabsContent value="transcription" className="mt-6 space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>千问 ASR 在线转录</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  Web 版使用千问 ASR 进行在线转录。请配置 DashScope API Key。
-                </p>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">API Key</label>
-                  <Input
-                    type="password"
-                    value={config.onlineASR.apiKey}
-                    onChange={(e) => updateOnlineASRConfig({ apiKey: e.target.value })}
-                    placeholder="sk-..."
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Base URL</label>
-                  <Input
-                    value={config.onlineASR.baseUrl}
-                    onChange={(e) => updateOnlineASRConfig({ baseUrl: e.target.value })}
-                    placeholder="https://dashscope.aliyuncs.com/api/v1"
-                  />
-                </div>
-              </CardContent>
-            </Card>
+            <TranscriptionEnginePanel visible={section === "transcription"} />
           </TabsContent>
 
           <TabsContent value="language-models" className="mt-6">

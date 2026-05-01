@@ -120,7 +120,7 @@ export interface TranscribeProgress {
 // ─── 转录引擎相关类型 ───
 
 /** 转录引擎类型 */
-export type TranscriptionEngineType = 'local-whisper' | 'qwen-asr';
+export type TranscriptionEngineType = 'qwen-asr';
 
 /** 在线 ASR 模型配置 */
 export interface OnlineASRConfig {
@@ -135,6 +135,34 @@ export interface OnlineASRConfig {
 export interface BrowserTranscriptionConfig {
   activeEngine: TranscriptionEngineType;
   onlineASR: OnlineASRConfig;
+}
+
+// ─── 转录供应商多供应商支持 ───
+
+/** 转录供应商预置类型 */
+export type TranscriptionProviderPresetType = 'dashscope' | 'openai-whisper' | 'assemblyai' | 'deepgram';
+
+/** 转录供应商来源 */
+export type TranscriptionProviderKind = 'preset' | 'custom';
+
+/** 转录供应商卡片 */
+export interface TranscriptionProviderCard {
+  id: string;
+  kind: TranscriptionProviderKind;
+  presetType?: TranscriptionProviderPresetType;
+  name: string;
+  apiKey: string;
+  apiKeyConfigured?: boolean;
+  baseUrl: string;
+  modelName: string;
+  enabled: boolean;
+  enableITN?: boolean;
+}
+
+/** 转录供应商设置 */
+export interface TranscriptionProviderSettings {
+  providers: TranscriptionProviderCard[];
+  activeProviderId: string;
 }
 
 export type RuntimeExecutableSource = 'configured' | 'detected' | 'missing';

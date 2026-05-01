@@ -436,7 +436,13 @@ async function resolvePodcastAudio(input: string): Promise<ResolvedPodcastAudio>
 
 // --- DashScope 提交 ---
 
-async function submitDashScopeJob(audioUrl: string, apiKey: string, baseUrl: string): Promise<string> {
+async function submitDashScopeJob(
+  audioUrl: string,
+  apiKey: string,
+  baseUrl: string,
+  modelName?: string,
+  enableITN?: boolean,
+): Promise<string> {
   const res = await fetch(`${baseUrl}/services/audio/asr/transcription`, {
     method: "POST",
     headers: {
@@ -445,9 +451,9 @@ async function submitDashScopeJob(audioUrl: string, apiKey: string, baseUrl: str
       "X-DashScope-Async": "enable",
     },
     body: JSON.stringify({
-      model: "qwen3-asr-flash-filetrans",
+      model: modelName || "qwen3-asr-flash-filetrans",
       input: { file_url: audioUrl },
-      parameters: { channel_id: [0], enable_itn: true, enable_words: true },
+      parameters: { channel_id: [0], enable_itn: enableITN ?? true, enable_words: true },
     }),
   });
 
@@ -482,11 +488,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const body = req.body || {};
 
       // 支持两种请求格式:
-      // 1. { url, apiKey, baseUrl }
-      // 2. { url, onlineASRConfig: { apiKey, baseUrl } }
+      // 1. { url, apiKey, baseUrl, modelName, enableITN }
+      // 2. { url, onlineASRConfig: { apiKey, baseUrl, modelName, enableITN } }
       const url: string = body.url;
       const apiKey: string = body.apiKey || body.onlineASRConfig?.apiKey;
       const baseUrl: string = (body.baseUrl || body.onlineASRConfig?.baseUrl || DEFAULT_QWEN_BASE_URL).replace(/\/$/, "");
+      const modelName: string | undefined = body.modelName || body.onlineASRConfig?.modelName;
+      const enableITN: boolean | undefined = typeof body.enableITN === "boolean"
+        ? body.enableITN
+        : typeof body.onlineASRConfig?.enableITN === "boolean"
+          ? body.onlineASRConfig.enableITN
+          : undefined;
 
       if (!url) return res.status(400).json({ success: false, error: "缺少播客链接" });
       if (!apiKey) return res.status(400).json({ success: false, error: "缺少 DashScope API Key" });
@@ -495,7 +507,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const episode = await resolvePodcastAudio(url);
 
       // 提交 DashScope ASR 任务
-      const dashScopeTaskId = await submitDashScopeJob(episode.audioUrl, apiKey, baseUrl);
+      const dashScopeTaskId = await submitDashScopeJob(episode.audioUrl, apiKey, baseUrl, modelName, enableITN);
 
       const taskId = `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 

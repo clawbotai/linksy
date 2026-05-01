@@ -7,7 +7,6 @@ import { GeneralSettingsPanel } from "@/components/app-settings/general-settings
 import { SettingsSidebar } from "@/components/app-settings/settings-sidebar";
 import type { SettingsSection as SettingsSectionType } from "@/components/app-settings/shared";
 import { TranscriptionEnginePanel } from "@/components/app-settings/transcription-engine-panel";
-import { WhisperPanel } from "@/components/app-settings/whisper-panel";
 import {
   Dialog,
   DialogContent,
@@ -42,7 +41,7 @@ export function AppSettingsDialog({
       <DialogContent className="w-[calc(100vw-1.5rem)] max-w-5xl gap-0 overflow-hidden p-0 sm:rounded-xl">
         <DialogHeader className="border-b border-border/60 px-5 py-4">
           <DialogTitle>设置</DialogTitle>
-          <DialogDescription>管理应用偏好、语言模型和语音转录环境。</DialogDescription>
+          <DialogDescription>管理应用偏好、语言模型和语音转录。</DialogDescription>
         </DialogHeader>
 
         <div className="grid max-h-[78vh] min-h-[560px] grid-cols-1 md:grid-cols-[220px_minmax(0,1fr)]">
@@ -53,11 +52,6 @@ export function AppSettingsDialog({
             <LanguageModelSettingsPanel visible={activeSection === "language-models"} />
             <TranscriptionEnginePanel visible={activeSection === "transcription"} />
             <ExportIntegrationsPanel visible={activeSection === "export"} />
-            <WhisperPanel
-              open={open}
-              visible={activeSection === "whisper"}
-              onClose={() => onOpenChange(false)}
-            />
           </div>
         </div>
       </DialogContent>

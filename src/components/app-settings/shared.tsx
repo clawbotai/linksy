@@ -3,23 +3,15 @@
 import * as React from "react";
 import {
   BookUp,
-  Globe,
   Mic,
   Monitor,
   Moon,
   Settings,
   Sun,
-  Terminal,
   Zap,
 } from "lucide-react";
-import type {
-  LocalRuntimeInstallableComponent,
-  TranscriptionEngineType,
-  WhisperStatus,
-} from "@/types";
-import type { NormalizedWhisperStatus } from "@/lib/whisper-status";
 
-export type SettingsSection = "general" | "language-models" | "transcription" | "export" | "whisper";
+export type SettingsSection = "general" | "language-models" | "transcription" | "export";
 
 export interface SettingsSectionItem {
   id: SettingsSection;
@@ -53,12 +45,6 @@ export const SETTINGS_SECTIONS: SettingsSectionItem[] = [
     description: "IMA 与 Obsidian",
     icon: <BookUp className="h-4 w-4" />,
   },
-  {
-    id: "whisper",
-    label: "Whisper 设置",
-    description: "本地转录环境",
-    icon: <Terminal className="h-4 w-4" />,
-  },
 ];
 
 export const THEME_OPTIONS = [
@@ -81,81 +67,3 @@ export const THEME_OPTIONS = [
     icon: Moon,
   },
 ];
-
-export const MODEL_OPTIONS = [
-  {
-    id: "small" as const,
-    name: "Small 模型",
-    description: "速度快，适合日常使用",
-    size: "~460 MB",
-  },
-  {
-    id: "medium" as const,
-    name: "Medium 模型",
-    description: "质量更好，适合专业场景",
-    size: "~1.5 GB",
-  },
-];
-
-export const ENGINE_OPTIONS: Array<{
-  id: TranscriptionEngineType;
-  name: string;
-  description: string;
-  icon: React.ReactNode;
-}> = [
-  {
-    id: "local-whisper",
-    name: "本地 Whisper",
-    description: "使用本地 whisper.cpp 进行转录，无需网络",
-    icon: <Terminal className="h-4 w-4" />,
-  },
-  {
-    id: "qwen-asr",
-    name: "千问 ASR",
-    description: "使用阿里云千问 ASR 在线转录，速度快",
-    icon: <Globe className="h-4 w-4" />,
-  },
-];
-
-export const MANUAL_INSTALL_COMMANDS = [
-  '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"',
-  "brew install whisper-cpp",
-  "brew install ffmpeg",
-].join("\n");
-
-export const REQUIREMENT_LABELS: Record<string, string> = {
-  homebrew: "Homebrew",
-  whisper: "whisper.cpp",
-  ffmpeg: "ffmpeg",
-  model: "模型文件",
-};
-
-export function getExecutableSourceLabel(source: WhisperStatus["whisperSource"]): string {
-  switch (source) {
-    case "configured":
-      return "已使用用户手动配置";
-    case "detected":
-      return "已使用用户本机安装";
-    default:
-      return "缺失";
-  }
-}
-
-export function getInstallComponents(
-  status: NormalizedWhisperStatus | null,
-): LocalRuntimeInstallableComponent[] {
-  if (!status) {
-    return [];
-  }
-
-  const ordered: LocalRuntimeInstallableComponent[] = ["homebrew", "whisper", "ffmpeg"];
-  return ordered.filter((component) => status.missingRequirements?.includes(component));
-}
-
-export function formatFileSize(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-}
