@@ -11,11 +11,7 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToastManager } from "@/components/ui/toast";
 import { useTranscriptionConfig } from "@/hooks/use-transcription-config";
-import {
-  submitDashScopeTranscriptionJob,
-  waitForDashScopeTranscription,
-} from "@/lib/online-asr-client";
-import { resolvePodcastAudio } from "@/lib/podcast-url-resolver";
+
 import { deleteTranscriptionRecord, listTranscriptionRecords, saveTranscriptionRecord } from "@/lib/db";
 import { COMPLETION_TOAST_DURATION_MS, buildCompletionMessage } from "@/lib/utils";
 import type { TranscribeSegment } from "@/types";
@@ -179,56 +175,124 @@ export function WebPodcastPage() {
         setTranscribeStage(STATUS_STAGE_MAP.fetching_info);
         setTranscribeStatus("fetching_info");
 
-        const audio = await resolvePodcastAudio(normalizedPodcastUrl, controller.signal);
-        if (activeTaskIdRef.current !== newTaskId) return;
-
-        setEpisodeTitle(audio.title);
-        setPodcastAudioInfo({ audioUrl: audio.audioUrl, wordCount: 0, language: "zh" });
-        setTranscribeStage("正在提交转录任务...");
-        setTranscribeStatus("transcribing");
-        setTranscribeProgress(15);
-
-        const submitted = await submitDashScopeTranscriptionJob(
-          audio.audioUrl,
-          config.onlineASR,
-          controller.signal,
-        );
-        if (activeTaskIdRef.current !== newTaskId) return;
-
-        const result = await waitForDashScopeTranscription(submitted.taskId, config.onlineASR, {
+        // 通过 Vercel Serverless API 提交转录任务
+        const submitRes = await fetch("/api/transcriptions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            url: normalizedPodcastUrl,
+            apiKey: config.onlineASR.apiKey,
+            baseUrl: config.onlineASR.baseUrl,
+          }),
           signal: controller.signal,
-          onProgress: (update) => {
-            if (activeTaskIdRef.current !== newTaskId) return;
-            setTranscribeStatus(update.status);
-            setTranscribeStage(STATUS_STAGE_MAP[update.status]);
-            setTranscribeProgress(update.progress);
-          },
         });
+
+        if (!submitRes.ok) {
+          const errBody = await submitRes.json().catch(() => null);
+          throw new Error(errBody?.error || `提交转录任务失败 (${submitRes.status})`);
+        }
+
+        const submitData = await submitRes.json();
+        if (!submitData.success) {
+          throw new Error(submitData.error || "提交转录任务失败");
+        }
+
+        const { dashScopeTaskId, title: episodeTitleFromApi, audioUrl: audioUrlFromApi, duration: durationFromApi } = submitData.data;
+        if (activeTaskIdRef.current !== newTaskId) return;
+
+        setEpisodeTitle(episodeTitleFromApi || "");
+        setPodcastAudioInfo({ audioUrl: audioUrlFromApi, wordCount: 0, language: "zh" });
+        setTranscribeStage("正在转录中...");
+        setTranscribeStatus("transcribing");
+        setTranscribeProgress(20);
+
+        // 轮询 DashScope 任务状态
+        const baseUrl = (config.onlineASR.baseUrl || "https://dashscope.aliyuncs.com/api/v1").replace(/\/$/, "");
+        let progress = 20;
+
+        const pollResult = await new Promise<{ transcript: string; segments: Array<{ timestamp: string; text: string }>; wordCount: number; language: string }>((resolve, reject) => {
+          const intervalId = setInterval(async () => {
+            try {
+              if (controller.signal.aborted) {
+                clearInterval(intervalId);
+                reject(new DOMException("Aborted", "AbortError"));
+                return;
+              }
+
+              const statusUrl = `/api/transcriptions/${encodeURIComponent(dashScopeTaskId)}/status?baseUrl=${encodeURIComponent(baseUrl)}`;
+              const statusRes = await fetch(statusUrl, {
+                headers: { Authorization: `Bearer ${config.onlineASR.apiKey}` },
+                signal: controller.signal,
+              });
+
+              if (!statusRes.ok) {
+                clearInterval(intervalId);
+                const errBody = await statusRes.json().catch(() => null);
+                reject(new Error(errBody?.message || `查询任务状态失败 (${statusRes.status})`));
+                return;
+              }
+
+              const statusData = await statusRes.json();
+
+              if (statusData.status === "running") {
+                if (activeTaskIdRef.current !== newTaskId) {
+                  clearInterval(intervalId);
+                  return;
+                }
+                progress = Math.min(85, progress + 5);
+                setTranscribeProgress(progress);
+                setTranscribeStage(STATUS_STAGE_MAP.transcribing);
+              } else if (statusData.status === "completed") {
+                clearInterval(intervalId);
+                resolve(statusData.result);
+              } else if (statusData.status === "error") {
+                clearInterval(intervalId);
+                reject(new Error(statusData.message || "转录失败"));
+              } else if (statusData.status === "canceled") {
+                clearInterval(intervalId);
+                reject(new Error("转录任务已取消"));
+              }
+            } catch (err) {
+              if (err instanceof DOMException && err.name === "AbortError") {
+                clearInterval(intervalId);
+                reject(err);
+              }
+              // For other fetch errors during polling, just let the next interval retry
+            }
+          }, 3000);
+
+          // Listen for abort to clear interval
+          controller.signal.addEventListener("abort", () => {
+            clearInterval(intervalId);
+            reject(new DOMException("Aborted", "AbortError"));
+          });
+        });
+
         if (activeTaskIdRef.current !== newTaskId) return;
 
         transcribeFinishedRef.current = true;
         activeTaskIdRef.current = null;
-        setPodcastTranscript(result.transcript);
+        setPodcastTranscript(pollResult.transcript);
         setPodcastAudioInfo({
-          audioUrl: audio.audioUrl,
-          wordCount: result.wordCount,
-          language: result.language,
+          audioUrl: audioUrlFromApi,
+          wordCount: pollResult.wordCount,
+          language: pollResult.language,
         });
-        setFinalSegments(result.segments);
-        setLiveSegments(result.segments);
+        setFinalSegments(pollResult.segments);
+        setLiveSegments(pollResult.segments);
 
         const record: TranscriptionRecord = {
           id: newTaskId,
           taskId: newTaskId,
-          title: audio.title || "未知标题",
+          title: episodeTitleFromApi || "未知标题",
           status: "completed",
           progress: 100,
-          segments: result.segments,
-          transcript: result.transcript,
-          wordCount: result.wordCount,
-          audioUrl: audio.audioUrl,
-          language: result.language,
-          duration: audio.duration,
+          segments: pollResult.segments,
+          transcript: pollResult.transcript,
+          wordCount: pollResult.wordCount,
+          audioUrl: audioUrlFromApi,
+          language: pollResult.language,
+          duration: durationFromApi,
           createdAt: new Date(),
           updatedAt: new Date(),
         };
@@ -332,7 +396,7 @@ export function WebPodcastPage() {
                   </Button>
                 </div>
                 <p className="mt-2.5 text-xs text-muted-foreground leading-relaxed">
-                  使用浏览器直连千问 ASR 在线转录。若页面链接无法跨域读取，请改用 RSS 链接或音频直链。
+                  通过服务端代理调用千问 ASR 在线转录，支持音频直链、Apple Podcasts 单集、小宇宙及 RSS 链接。
                 </p>
               </div>
             </form>

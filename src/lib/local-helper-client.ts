@@ -7,15 +7,13 @@ declare global {
 }
 
 function resolveHelperOrigin(): string {
+  // Web 版本：返回空字符串，使用同源 API 路径
+  // 桌面版本可通过 window.__MEMOFLOW_HELPER_ORIGIN__ 覆盖
   if (typeof window !== 'undefined' && window.__MEMOFLOW_HELPER_ORIGIN__) {
     return window.__MEMOFLOW_HELPER_ORIGIN__;
   }
 
-  if (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_MEMOFLOW_HELPER_ORIGIN) {
-    return process.env.NEXT_PUBLIC_MEMOFLOW_HELPER_ORIGIN;
-  }
-
-  return 'http://127.0.0.1:47392';
+  return '';
 }
 
 export const DEFAULT_HELPER_ORIGIN = resolveHelperOrigin();
