@@ -109,6 +109,7 @@ export function getActiveTranscriptionProvider(): TranscriptionProviderCard | nu
     card.baseUrl = legacyConfig.onlineASR.baseUrl;
     card.modelName = legacyConfig.onlineASR.modelName;
     card.enableITN = legacyConfig.onlineASR.enableITN;
+    card.apiFormat = "dashscope";
     return card;
   }
 

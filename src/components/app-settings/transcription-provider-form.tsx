@@ -5,7 +5,7 @@ import { Check, Eye, EyeOff, Loader2, Trash2, Zap, Power } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import type { TranscriptionProviderCard } from "@/types";
+import type { TranscriptionApiFormat, TranscriptionProviderCard } from "@/types";
 import { TRANSCRIPTION_PROVIDER_META } from "@/lib/transcription-providers";
 
 interface TranscriptionProviderFormProps {
@@ -36,6 +36,7 @@ export function TranscriptionProviderForm({
   const isPreset = provider.kind === "preset";
   const meta = provider.presetType ? TRANSCRIPTION_PROVIDER_META[provider.presetType] : null;
   const apiKeyPlaceholder = meta?.apiKeyPlaceholder ?? "sk-...";
+  const capabilityLabel = meta?.capabilityLabel ?? "";
 
   return (
     <div className="space-y-4">
@@ -50,6 +51,29 @@ export function TranscriptionProviderForm({
         />
       </div>
 
+      {/* 能力标签 */}
+      {capabilityLabel && (
+        <div className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+          {capabilityLabel}
+        </div>
+      )}
+
+      {/* apiFormat（自定义供应商可选） */}
+      {!isPreset && (
+        <div className="space-y-2">
+          <label className="text-xs font-medium">转录协议</label>
+          <select
+            value={provider.apiFormat}
+            onChange={(e) => onUpdate({ apiFormat: e.target.value as TranscriptionApiFormat })}
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+          >
+            <option value="openai-whisper">OpenAI Whisper（同步，推荐短音频）</option>
+            <option value="dashscope">DashScope（异步，长音频友好）</option>
+            <option value="gemini">Google Gemini（同步，推荐短音频）</option>
+          </select>
+        </div>
+      )}
+
       {/* API Key */}
       <div className="space-y-2">
         <label className="text-xs font-medium">API Key</label>
@@ -60,6 +84,7 @@ export function TranscriptionProviderForm({
             onChange={(e) => onUpdate({ apiKey: e.target.value })}
             placeholder={apiKeyPlaceholder}
             className="pr-16"
+            autoComplete="off"
           />
           <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
             {provider.apiKey && (

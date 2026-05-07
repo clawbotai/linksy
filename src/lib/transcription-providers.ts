@@ -1,6 +1,7 @@
 "use client";
 
 import type {
+  TranscriptionApiFormat,
   TranscriptionProviderCard,
   TranscriptionProviderPresetType,
   TranscriptionProviderSettings,
@@ -14,10 +15,15 @@ export interface TranscriptionProviderMeta {
   defaultEnableITN?: boolean;
   apiKeyPlaceholder: string;
   modelSuggestions: string[];
+  apiFormat: TranscriptionApiFormat;
+  /** 能力标签：长音频/短音频提示 */
+  capabilityLabel: string;
 }
 
 export const TRANSCRIPTION_PROVIDER_ORDER: TranscriptionProviderPresetType[] = [
   "dashscope",
+  "openai-whisper",
+  "gemini",
 ];
 
 export const TRANSCRIPTION_PROVIDER_META: Record<
@@ -32,6 +38,8 @@ export const TRANSCRIPTION_PROVIDER_META: Record<
     defaultEnableITN: true,
     apiKeyPlaceholder: "sk-...",
     modelSuggestions: ["qwen3-asr-flash-filetrans", "qwen3-asr-flash"],
+    apiFormat: "dashscope",
+    capabilityLabel: "长音频 ✓ 异步无超时",
   },
   "openai-whisper": {
     id: "openai-whisper",
@@ -40,6 +48,18 @@ export const TRANSCRIPTION_PROVIDER_META: Record<
     defaultModelName: "whisper-1",
     apiKeyPlaceholder: "sk-...",
     modelSuggestions: ["whisper-1"],
+    apiFormat: "openai-whisper",
+    capabilityLabel: "短音频 推荐 ≤15 分钟",
+  },
+  gemini: {
+    id: "gemini",
+    label: "Google Gemini",
+    defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta",
+    defaultModelName: "gemini-2.5-pro",
+    apiKeyPlaceholder: "AIza...",
+    modelSuggestions: ["gemini-2.5-pro", "gemini-2.5-flash"],
+    apiFormat: "gemini",
+    capabilityLabel: "短音频 推荐 ≤15 分钟",
   },
   assemblyai: {
     id: "assemblyai",
@@ -48,6 +68,8 @@ export const TRANSCRIPTION_PROVIDER_META: Record<
     defaultModelName: "best",
     apiKeyPlaceholder: "填写 AssemblyAI API Key",
     modelSuggestions: ["best", "nano"],
+    apiFormat: "openai-whisper",
+    capabilityLabel: "",
   },
   deepgram: {
     id: "deepgram",
@@ -56,6 +78,8 @@ export const TRANSCRIPTION_PROVIDER_META: Record<
     defaultModelName: "nova-2",
     apiKeyPlaceholder: "填写 Deepgram API Key",
     modelSuggestions: ["nova-2", "nova-1", "whisper-large"],
+    apiFormat: "openai-whisper",
+    capabilityLabel: "",
   },
 };
 
@@ -114,6 +138,7 @@ export function createDefaultTranscriptionProviderCard(
     baseUrl: meta.defaultBaseUrl,
     modelName: meta.defaultModelName,
     enabled: true,
+    apiFormat: meta.apiFormat,
     ...(meta.defaultEnableITN !== undefined ? { enableITN: meta.defaultEnableITN } : {}),
   };
 }
@@ -127,6 +152,7 @@ export function createCustomTranscriptionProviderCard(): TranscriptionProviderCa
     baseUrl: "",
     modelName: "",
     enabled: true,
+    apiFormat: "openai-whisper",
   };
 }
 
@@ -138,6 +164,15 @@ export function createDefaultTranscriptionProviderSettings(): TranscriptionProvi
     providers,
     activeProviderId: providers[0]?.id ?? "",
   };
+}
+
+function normalizeTranscriptionApiFormat(
+  value: unknown,
+  fallback: TranscriptionApiFormat,
+): TranscriptionApiFormat {
+  return value === "dashscope" || value === "openai-whisper" || value === "gemini"
+    ? value
+    : fallback;
 }
 
 function normalizeTranscriptionProviderCard(
@@ -183,6 +218,10 @@ function normalizeTranscriptionProviderCard(
     enableITN: typeof (src as TranscriptionProviderCard).enableITN === "boolean"
       ? (src as TranscriptionProviderCard).enableITN
       : defaults.enableITN,
+    apiFormat: normalizeTranscriptionApiFormat(
+      (src as TranscriptionProviderCard).apiFormat,
+      defaults.apiFormat,
+    ),
   };
 }
 
@@ -238,6 +277,7 @@ export function migrateFromLegacyTranscriptionConfig(): TranscriptionProviderSet
 
     const dashScopeCard = createDefaultTranscriptionProviderCard("dashscope");
     dashScopeCard.apiKey = parsed.onlineASR.apiKey;
+    dashScopeCard.apiFormat = "dashscope";
     if (parsed.onlineASR.baseUrl) dashScopeCard.baseUrl = parsed.onlineASR.baseUrl.replace(/\/$/, "");
     if (parsed.onlineASR.modelName) dashScopeCard.modelName = parsed.onlineASR.modelName;
     if (typeof parsed.onlineASR.enableITN === "boolean") dashScopeCard.enableITN = parsed.onlineASR.enableITN;

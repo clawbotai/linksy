@@ -156,7 +156,6 @@ export function WebPodcastPage() {
       cancelActiveRequest();
 
       try {
-        // Web 版只支持在线 ASR，检查 API Key
         if (!activeProvider?.apiKey?.trim()) {
           openSettings("transcription");
           setToast({
@@ -169,7 +168,7 @@ export function WebPodcastPage() {
 
         const controller = new AbortController();
         transcribeAbortRef.current = controller;
-        const newTaskId = `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+        const newTaskId = `${Date.now()}_${crypto.randomUUID().slice(0, 8)}`;
 
         transcribeFinishedRef.current = false;
         activeTaskIdRef.current = newTaskId;
@@ -177,8 +176,16 @@ export function WebPodcastPage() {
         setTranscribeStage(STATUS_STAGE_MAP.fetching_info);
         setTranscribeStatus("fetching_info");
 
-        // 通过 Vercel Serverless API 提交转录任务
-        const submitRes = await fetch("/api/transcriptions", {
+        const apiFormat = activeProvider!.apiFormat || "dashscope";
+
+        // 根据 apiFormat 选择提交端点
+        const submitEndpoint = apiFormat === "dashscope"
+          ? "/api/transcriptions"
+          : apiFormat === "openai-whisper"
+            ? "/api/transcriptions/whisper"
+            : "/api/transcriptions/gemini";
+
+        const submitRes = await fetch(submitEndpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -201,7 +208,7 @@ export function WebPodcastPage() {
           throw new Error(submitData.error || "提交转录任务失败");
         }
 
-        const { dashScopeTaskId, title: episodeTitleFromApi, audioUrl: audioUrlFromApi, duration: durationFromApi } = submitData.data;
+        const { dashScopeTaskId, title: episodeTitleFromApi, audioUrl: audioUrlFromApi, duration: durationFromApi, done, result } = submitData.data;
         if (activeTaskIdRef.current !== newTaskId) return;
 
         setEpisodeTitle(episodeTitleFromApi || "");
@@ -210,66 +217,108 @@ export function WebPodcastPage() {
         setTranscribeStatus("transcribing");
         setTranscribeProgress(20);
 
-        // 轮询 DashScope 任务状态
+        // 同步协议（Whisper / Gemini）：结果已直接返回
+        if (done && result) {
+          if (activeTaskIdRef.current !== newTaskId) return;
+
+          transcribeFinishedRef.current = true;
+          activeTaskIdRef.current = null;
+          setPodcastTranscript(result.transcript);
+          setPodcastAudioInfo({ audioUrl: audioUrlFromApi, wordCount: result.wordCount, language: result.language });
+          setFinalSegments(result.segments);
+          setLiveSegments(result.segments);
+          setTranscribeProgress(100);
+
+          const record: TranscriptionRecord = {
+            id: newTaskId,
+            taskId: newTaskId,
+            title: episodeTitleFromApi || "未知标题",
+            status: "completed",
+            progress: 100,
+            segments: result.segments,
+            transcript: result.transcript,
+            wordCount: result.wordCount,
+            audioUrl: audioUrlFromApi,
+            language: result.language,
+            duration: durationFromApi,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
+          await saveTranscriptionRecord(record);
+          setTranscriptionHistory((prev) => [record, ...prev.filter((r) => r.id !== newTaskId)]);
+
+          setTaskId(null);
+          setTranscribeProgress(null);
+          transcribeAbortRef.current = null;
+          setCompletionNotice(buildCompletionMessage());
+          setToast({ message: "转录完成", type: "success", duration: COMPLETION_TOAST_DURATION_MS });
+          return;
+        }
+
+        // 异步协议（DashScope）：顺序轮询（避免 setInterval 重入）
         const pollBaseUrl = (activeProvider!.baseUrl || "https://dashscope.aliyuncs.com/api/v1").replace(/\/$/, "");
         let progress = 20;
 
         const pollResult = await new Promise<{ transcript: string; segments: Array<{ timestamp: string; text: string }>; wordCount: number; language: string }>((resolve, reject) => {
-          const intervalId = setInterval(async () => {
-            try {
-              if (controller.signal.aborted) {
-                clearInterval(intervalId);
-                reject(new DOMException("Aborted", "AbortError"));
-                return;
-              }
+          let stopped = false;
 
-              const statusUrl = `/api/transcriptions/${encodeURIComponent(dashScopeTaskId)}/status?baseUrl=${encodeURIComponent(pollBaseUrl)}`;
-              const statusRes = await fetch(statusUrl, {
-                headers: { Authorization: `Bearer ${activeProvider!.apiKey}` },
-                signal: controller.signal,
-              });
+          const abortHandler = () => {
+            stopped = true;
+            reject(new DOMException("Aborted", "AbortError"));
+          };
+          controller.signal.addEventListener("abort", abortHandler);
 
-              if (!statusRes.ok) {
-                clearInterval(intervalId);
-                const errBody = await statusRes.json().catch(() => null);
-                reject(new Error(errBody?.message || `查询任务状态失败 (${statusRes.status})`));
-                return;
-              }
+          const poll = async () => {
+            while (!stopped) {
+              try {
+                if (controller.signal.aborted) { stopped = true; reject(new DOMException("Aborted", "AbortError")); return; }
 
-              const statusData = await statusRes.json();
+                const statusUrl = `/api/transcriptions/${encodeURIComponent(dashScopeTaskId)}/status?baseUrl=${encodeURIComponent(pollBaseUrl)}`;
+                const statusRes = await fetch(statusUrl, {
+                  headers: { Authorization: `Bearer ${activeProvider!.apiKey}` },
+                  signal: controller.signal,
+                });
 
-              if (statusData.status === "running") {
-                if (activeTaskIdRef.current !== newTaskId) {
-                  clearInterval(intervalId);
+                if (!statusRes.ok) {
+                  stopped = true;
+                  const errBody = await statusRes.json().catch(() => null);
+                  reject(new Error(errBody?.message || `查询任务状态失败 (${statusRes.status})`));
                   return;
                 }
-                progress = Math.min(85, progress + 5);
-                setTranscribeProgress(progress);
-                setTranscribeStage(STATUS_STAGE_MAP.transcribing);
-              } else if (statusData.status === "completed") {
-                clearInterval(intervalId);
-                resolve(statusData.result);
-              } else if (statusData.status === "error") {
-                clearInterval(intervalId);
-                reject(new Error(statusData.message || "转录失败"));
-              } else if (statusData.status === "canceled") {
-                clearInterval(intervalId);
-                reject(new Error("转录任务已取消"));
-              }
-            } catch (err) {
-              if (err instanceof DOMException && err.name === "AbortError") {
-                clearInterval(intervalId);
-                reject(err);
-              }
-              // For other fetch errors during polling, just let the next interval retry
-            }
-          }, 3000);
 
-          // Listen for abort to clear interval
-          controller.signal.addEventListener("abort", () => {
-            clearInterval(intervalId);
-            reject(new DOMException("Aborted", "AbortError"));
-          });
+                const statusData = await statusRes.json();
+
+                if (statusData.status === "running") {
+                  if (activeTaskIdRef.current !== newTaskId) { stopped = true; return; }
+                  progress = Math.min(85, progress + 5);
+                  setTranscribeProgress(progress);
+                  setTranscribeStage(STATUS_STAGE_MAP.transcribing);
+                } else if (statusData.status === "completed") {
+                  stopped = true;
+                  resolve(statusData.result);
+                  return;
+                } else if (statusData.status === "error") {
+                  stopped = true;
+                  reject(new Error(statusData.message || "转录失败"));
+                  return;
+                } else if (statusData.status === "canceled") {
+                  stopped = true;
+                  reject(new Error("转录任务已取消"));
+                  return;
+                }
+              } catch (err) {
+                if (err instanceof DOMException && err.name === "AbortError") {
+                  stopped = true;
+                  reject(err);
+                  return;
+                }
+              }
+              // 等待 3 秒再轮询（顺序执行，不会重入）
+              await new Promise((r) => setTimeout(r, 3000));
+            }
+          };
+
+          poll();
         });
 
         if (activeTaskIdRef.current !== newTaskId) return;
@@ -277,11 +326,7 @@ export function WebPodcastPage() {
         transcribeFinishedRef.current = true;
         activeTaskIdRef.current = null;
         setPodcastTranscript(pollResult.transcript);
-        setPodcastAudioInfo({
-          audioUrl: audioUrlFromApi,
-          wordCount: pollResult.wordCount,
-          language: pollResult.language,
-        });
+        setPodcastAudioInfo({ audioUrl: audioUrlFromApi, wordCount: pollResult.wordCount, language: pollResult.language });
         setFinalSegments(pollResult.segments);
         setLiveSegments(pollResult.segments);
 
@@ -309,14 +354,16 @@ export function WebPodcastPage() {
         setCompletionNotice(buildCompletionMessage());
         setToast({ message: "转录完成", type: "success", duration: COMPLETION_TOAST_DURATION_MS });
       } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-
-        console.error("Podcast transcription error:", error);
-        setToast({ message: error instanceof Error ? error.message : "网络错误，请检查连接", type: "error" });
+        // 无论何种错误（包括 AbortError），都需要清理状态
         transcribeFinishedRef.current = true;
         activeTaskIdRef.current = null;
         transcribeAbortRef.current = null;
         setTaskId(null);
+
+        if (error instanceof DOMException && error.name === "AbortError") return;
+
+        console.error("Podcast transcription error:", error);
+        setToast({ message: error instanceof Error ? error.message : "网络错误，请检查连接", type: "error" });
       }
     },
     [cancelActiveRequest, activeProvider, config.activeEngine, isLoading, openSettings, podcastUrl],

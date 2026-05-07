@@ -140,7 +140,10 @@ export interface BrowserTranscriptionConfig {
 // ─── 转录供应商多供应商支持 ───
 
 /** 转录供应商预置类型 */
-export type TranscriptionProviderPresetType = 'dashscope' | 'openai-whisper' | 'assemblyai' | 'deepgram';
+export type TranscriptionProviderPresetType = 'dashscope' | 'openai-whisper' | 'assemblyai' | 'deepgram' | 'gemini';
+
+/** 转录 API 协议格式 */
+export type TranscriptionApiFormat = 'dashscope' | 'openai-whisper' | 'gemini';
 
 /** 转录供应商来源 */
 export type TranscriptionProviderKind = 'preset' | 'custom';
@@ -157,6 +160,7 @@ export interface TranscriptionProviderCard {
   modelName: string;
   enabled: boolean;
   enableITN?: boolean;
+  apiFormat: TranscriptionApiFormat;
 }
 
 /** 转录供应商设置 */

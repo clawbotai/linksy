@@ -1,6 +1,9 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { assertSafePublicUrl } from "../../_lib/podcast-resolver.js";
+import { DEFAULT_DASHSCOPE_BASE_URL, buildDashScopeHint } from "../../_lib/dashscope.js";
+import { safeFetchJson } from "../../_lib/safe-fetch.js";
 
-const DEFAULT_QWEN_BASE_URL = "https://dashscope.aliyuncs.com/api/v1";
+const TASK_ID_RE = /^[A-Za-z0-9._-]+$/;
 
 function formatDashScopeTimestamp(ms: number): string {
   const totalMs = Math.max(0, Number(ms) || 0);
@@ -41,7 +44,7 @@ function buildResultFromPayload(payload: any) {
       const text = line.trim();
       if (!text) return;
       segments.push({
-        timestamp: `[00:00:${String(index).padStart(2, "0")}.000 --> 00:00:${String(index + 1).padStart(2, "0")}.000]`,
+        timestamp: `[${formatDashScopeTimestamp(index * 1000)} --> ${formatDashScopeTimestamp((index + 1) * 1000)}]`,
         text,
       });
     });
@@ -51,48 +54,17 @@ function buildResultFromPayload(payload: any) {
     transcript,
     segments,
     wordCount: transcript.replace(/\s/g, "").length,
-    language: "zh",
+    language: "unknown",
   };
 }
 
-function setCorsHeaders(res: VercelResponse) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
-}
-
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  setCorsHeaders(res);
-
-  if (req.method === "OPTIONS") {
-    return res.status(204).end();
-  }
-
-  if (req.method !== "GET") {
-    return res.status(405).json({ status: "error", message: "Method not allowed" });
-  }
-
-  // 1. 获取 taskId
-  const taskId = req.query.id as string;
-  if (!taskId) {
-    return res.status(400).json({ status: "error", message: "缺少任务 ID" });
-  }
-
-  // 2. 获取 API Key
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith("Bearer ")) {
-    return res.status(401).json({ status: "error", message: "缺少或无效的 Authorization header" });
-  }
-  const apiKey = authHeader.slice(7).trim();
-  if (!apiKey) {
-    return res.status(401).json({ status: "error", message: "API Key 不能为空" });
-  }
-
-  // 3. 可选 baseUrl
-  const baseUrl = ((req.query.baseUrl as string) || DEFAULT_QWEN_BASE_URL).replace(/\/$/, "");
-
+async function handleDashScopeStatus(
+  taskId: string,
+  apiKey: string,
+  baseUrl: string,
+  res: VercelResponse,
+) {
   try {
-    // 4. 查询 DashScope 任务状态
     const queryRes = await fetch(`${baseUrl}/tasks/${taskId}`, {
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -102,10 +74,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     if (!queryRes.ok) {
-      return res.status(queryRes.status).json({
-        status: "error",
-        message: `DashScope 查询失败 (${queryRes.status})`,
-      });
+      let message = `DashScope 查询失败 (${queryRes.status})`;
+      if (queryRes.status === 404 || queryRes.status === 400) {
+        message += buildDashScopeHint(baseUrl);
+      }
+      return res.status(queryRes.status).json({ status: "error", message });
     }
 
     const queryPayload = await queryRes.json();
@@ -113,59 +86,78 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const code = queryPayload?.output?.code || queryPayload?.code;
     const message = queryPayload?.output?.message || queryPayload?.message;
 
-    // 5. 解析响应
-    // 错误码
     if (code) {
-      return res.status(200).json({
-        status: "error",
-        message: message || "转录失败",
-      });
+      return res.status(200).json({ status: "error", message: message || "转录失败" });
     }
 
-    // FAILED
     if (taskStatus === "FAILED") {
-      return res.status(200).json({
-        status: "error",
-        message: message || "转录失败",
-      });
+      return res.status(200).json({ status: "error", message: message || "转录失败" });
     }
 
-    // CANCELED
     if (taskStatus === "CANCELED") {
       return res.status(200).json({ status: "canceled" });
     }
 
-    // SUCCEEDED
     if (taskStatus === "SUCCEEDED") {
       const transcriptionUrl = queryPayload?.output?.result?.transcription_url;
       if (!transcriptionUrl) {
-        return res.status(200).json({
-          status: "error",
-          message: "转录完成但未返回结果地址",
-        });
+        return res.status(200).json({ status: "error", message: "转录完成但未返回结果地址" });
       }
 
-      const resultRes = await fetch(transcriptionUrl);
-      if (!resultRes.ok) {
-        return res.status(200).json({
-          status: "error",
-          message: "下载转录结果失败",
-        });
+      // P0: SSRF 防护 — transcription_url 也需要校验，防恶意 DashScope 任务
+      try {
+        await assertSafePublicUrl(transcriptionUrl);
+      } catch {
+        return res.status(200).json({ status: "error", message: "转录结果地址不安全" });
       }
 
-      const resultPayload = await resultRes.json();
-      const result = buildResultFromPayload(resultPayload);
-
-      return res.status(200).json({
-        status: "completed",
-        result,
+      const resultPayload = await safeFetchJson(transcriptionUrl, {
+        timeoutMs: 60_000,
+        maxBytes: 16 * 1024 * 1024,
       });
+      const result = buildResultFromPayload(resultPayload);
+      return res.status(200).json({ status: "completed", result });
     }
 
-    // RUNNING 或其他状态
     return res.status(200).json({ status: "running" });
   } catch (error) {
     const errMessage = error instanceof Error ? error.message : "查询任务状态异常";
     return res.status(500).json({ status: "error", message: errMessage });
   }
+}
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method === "OPTIONS") {
+    return res.status(204).end();
+  }
+
+  if (req.method !== "GET") {
+    return res.status(405).json({ status: "error", message: "Method not allowed" });
+  }
+
+  const taskId = req.query.id as string;
+  if (!taskId) {
+    return res.status(400).json({ status: "error", message: "缺少任务 ID" });
+  }
+  if (!TASK_ID_RE.test(taskId)) {
+    return res.status(400).json({ status: "error", message: "任务 ID 格式无效" });
+  }
+
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) {
+    return res.status(401).json({ status: "error", message: "缺少或无效的 Authorization header" });
+  }
+  const apiKey = authHeader.slice(7).trim();
+  if (!apiKey) {
+    return res.status(401).json({ status: "error", message: "API Key 不能为空" });
+  }
+
+  const baseUrl = ((req.query.baseUrl as string) || DEFAULT_DASHSCOPE_BASE_URL).replace(/\/$/, "");
+  try {
+    await assertSafePublicUrl(baseUrl);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "无效的 baseUrl";
+    return res.status(400).json({ status: "error", message });
+  }
+  return handleDashScopeStatus(taskId, apiKey, baseUrl, res);
 }
